@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Be My Valentine?</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg1:#ffd7df;
+    --bg2:#ee9ca7;
+    --card: rgba(255,255,255,.92);
+    --shadow: 0 35px 110px rgba(0,0,0,.18);
+    --yes:#ff4d6d;
+  }
+
+  *{box-sizing:border-box}
+
+  body{
+    margin:0;
+    height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:system-ui, Segoe UI, Arial, sans-serif;
+    background: radial-gradient(circle at top, var(--bg1), var(--bg2));
+    overflow:hidden;
+  }
+
+  /* Floating hearts layer */
+  #hearts{
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    overflow:hidden;
+    z-index:0;
+  }
+  .heart{
+    position:absolute;
+    bottom:-40px;
+    font-size:18px;
+    opacity:.0;
+    filter: blur(0px);
+    animation: floatUp linear forwards;
+    will-change: transform, opacity;
+  }
+  @keyframes floatUp{
+    0%   { transform: translateY(0) translateX(0) rotate(0deg) scale(1); opacity:0; }
+    10%  { opacity:.85; }
+    100% { transform: translateY(-120vh) translateX(var(--drift)) rotate(var(--rot)) scale(var(--scale)); opacity:0; }
+  }
+
+  /* Confetti canvas */
+  #confetti{
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    z-index:3;
+  }
+
+  .card{
+    width:min(980px, 92vw);
+    min-height:560px;
+    background:var(--card);
+    border-radius:38px;
+    box-shadow: var(--shadow);
+    padding:90px 70px;
+    text-align:center;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    position:relative;
+    z-index:2;
+    backdrop-filter: blur(10px);
+    animation: fadeIn .9s ease both;
+  }
+  @keyframes fadeIn{
+    from{opacity:0; transform: translateY(18px);}
+    to{opacity:1; transform: translateY(0);}
+  }
+
+  h1{
+    font-family:'Playfair Display', serif;
+    font-size: clamp(46px, 6vw, 84px);
+    margin:0;
+    letter-spacing: .2px;
+  }
+
+  .emoji{
+    font-size:74px;
+    margin:55px 0 72px;
+    transform-origin:center;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100% { transform: scale(1); }
+    50%     { transform: scale(1.06); }
+  }
+
+  /* Buttons area */
+  .arena{
+    position:relative;
+    height:230px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  button{
+    border:0;
+    padding:20px 46px;
+    border-radius:999px;
+    font-size:24px;
+    cursor:pointer;
+    box-shadow: 0 16px 34px rgba(0,0,0,.12);
+    transition: transform .2s ease, box-shadow .2s ease, opacity .2s ease;
+    user-select:none;
+    -webkit-tap-highlight-color: transparent;
+    position:absolute;
+    top:50%;
+    transform: translate(-50%,-50%);
+    white-space:nowrap;
+  }
+
+  #yes{
+    left:30%;               /* symmetric left */
+    background: var(--yes);
+    color:#fff;
+  }
+  #yes:hover{ transform: translate(-50%,-50%) scale(1.07); box-shadow: 0 18px 40px rgba(255,77,109,.35); }
+
+  #no{
+    left:70%;               /* symmetric right */
+    background:#f2f2f2;
+    color:#222;
+    transition: left .18s ease, top .18s ease, transform .18s ease;
+  }
+
+  .hint{
+    margin-top:18px;
+    font-size:14px;
+    opacity:.7;
+  }
+
+  /* Music prompt */
+  .musicBadge{
+    position:absolute;
+    right:22px;
+    bottom:18px;
+    font-size:13px;
+    opacity:.7;
+    display:flex;
+    gap:8px;
+    align-items:center;
+  }
+  .dot{
+    width:8px;height:8px;border-radius:50%;
+    background:#999;
+  }
+  .dot.on{ background:#22c55e; box-shadow: 0 0 0 6px rgba(34,197,94,.15); }
+</style>
+</head>
+
+<body>
+
+<!-- background hearts -->
+<div id="hearts" aria-hidden="true"></div>
+
+<!-- confetti overlay -->
+<canvas id="confetti"></canvas>
+
+<div class="card">
+  <div>
+    <h1>Will you be my Valentine?</h1>
+    <div class="emoji">💘</div>
+  </div>
+
+  <div>
+    <div class="arena" id="arena">
+      <button id="yes">Yes 💖</button>
+      <button id="no">No 🙈</button>
+    </div>
+    <div class="hint">Try to click “No”… if you can 😈</div>
+  </div>
+
+  <div class="musicBadge">
+    <span class="dot" id="musicDot"></span>
+    <span id="musicText">Tap anywhere to start music</span>
+  </div>
+</div>
+
+<!-- IMPORTANT: You must provide your own legal audio file -->
+<audio id="bgm" preload="auto" loop>
+  <source src="dandelions.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+  // -----------------------------
+  // MUSIC: start on first user interaction (reliable; "autoplay" is blocked)
+  // -----------------------------
+  const bgm = document.getElementById('bgm');
+  const musicDot = document.getElementById('musicDot');
+  const musicText = document.getElementById('musicText');
+  let musicStarted = false;
+
+  async function startMusic(){
+    if(musicStarted) return;
+    musicStarted = true;
+    try{
+      await bgm.play();
+      musicDot.classList.add('on');
+      musicText.textContent = "Music on ✨";
+    }catch(e){
+      // If the file is missing or browser blocks, tell the truth
+      musicDot.classList.remove('on');
+      musicText.textContent = "Music couldn’t start (missing/blocked)";
+    }
+    window.removeEventListener('pointerdown', startMusic);
+    window.removeEventListener('keydown', startMusic);
+  }
+  window.addEventListener('pointerdown', startMusic, {once:false});
+  window.addEventListener('keydown', startMusic, {once:false});
+
+  // -----------------------------
+  // FLOATING HEARTS
+  // -----------------------------
+  const heartsLayer = document.getElementById('hearts');
+  const heartEmojis = ["💗","💖","💕","💞","💘","❤️"];
+  function spawnHeart(){
+    const h = document.createElement('div');
+    h.className = 'heart';
+    h.textContent = heartEmojis[Math.floor(Math.random()*heartEmojis.length)];
+
+    const size = 14 + Math.random()*26;
+    const left = Math.random()*100;
+    const dur  = 6 + Math.random()*7;
+    const drift = (Math.random()*120 - 60) + 'px';
+    const rot = (Math.random()*140 - 70) + 'deg';
+    const scale = (0.7 + Math.random()*1.2).toFixed(2);
+
+    h.style.left = left + 'vw';
+    h.style.fontSize = size + 'px';
+    h.style.animationDuration = dur + 's';
+    h.style.setProperty('--drift', drift);
+    h.style.setProperty('--rot', rot);
+    h.style.setProperty('--scale', scale);
+
+    heartsLayer.appendChild(h);
+    setTimeout(()=>h.remove(), dur*1000 + 200);
+  }
+  // steady rate + occasional bursts
+  setInterval(spawnHeart, 250);
+  setInterval(()=>{ for(let i=0;i<6;i++) spawnHeart(); }, 3500);
+
+  // -----------------------------
+  // NO BUTTON DODGE (smooth) + symmetric initial placement
+  // -----------------------------
+  const arena = document.getElementById('arena');
+  const noBtn = document.getElementById('no');
+  const yesBtn = document.getElementById('yes');
+
+  function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
+
+  // Track no-button position inside arena (pixels)
+  let noX = null, noY = null;
+
+  function initNoPosition(){
+    const a = arena.getBoundingClientRect();
+    // start symmetrical at 70% width center
+    noX = a.width * 0.70 - noBtn.offsetWidth/2;
+    noY = a.height * 0.50 - noBtn.offsetHeight/2;
+    noBtn.style.left = (noX) + "px";
+    noBtn.style.top  = (noY) + "px";
+    noBtn.style.transform = "translate(0,0)";
+  }
+
+  function dodge(clientX, clientY){
+    const a = arena.getBoundingClientRect();
+    const b = noBtn.getBoundingClientRect();
+
+    const cx = clientX - a.left;
+    const cy = clientY - a.top;
+
+    const bx = (b.left - a.left) + b.width/2;
+    const by = (b.top  - a.top)  + b.height/2;
+
+    const dx = bx - cx;
+    const dy = by - cy;
+    const dist = Math.hypot(dx,dy);
+
+    const threshold = 150;
+    const step = 150;
+
+    if(dist < threshold){
+      const nx = dx/(dist||1);
+      const ny = dy/(dist||1);
+
+      // current top-left (relative to arena)
+      const curLeft = parseFloat(noBtn.style.left) || (a.width*0.70);
+      const curTop  = parseFloat(noBtn.style.top)  || (a.height*0.50);
+
+      let newLeft = curLeft + nx*step;
+      let newTop  = curTop  + ny*step;
+
+      const pad = 14;
+      newLeft = clamp(newLeft, pad, a.width - noBtn.offsetWidth - pad);
+      newTop  = clamp(newTop,  pad, a.height - noBtn.offsetHeight - pad);
+
+      // If cornered, random hop
+      if(Math.abs(newLeft-curLeft)<2 && Math.abs(newTop-curTop)<2){
+        newLeft = clamp(Math.random()*(a.width - noBtn.offsetWidth), pad, a.width - noBtn.offsetWidth - pad);
+        newTop  = clamp(Math.random()*(a.height - noBtn.offsetHeight), pad, a.height - noBtn.offsetHeight - pad);
+      }
+
+      noBtn.style.left = newLeft + "px";
+      noBtn.style.top  = newTop  + "px";
+      noBtn.style.transform = "translate(0,0)";
+    }
+  }
+
+  document.addEventListener('mousemove', e => dodge(e.clientX, e.clientY), {passive:true});
+  arena.addEventListener('touchmove', e=>{
+    const t = e.touches[0];
+    if(t) dodge(t.clientX, t.clientY);
+  }, {passive:true});
+
+  noBtn.addEventListener('click', ()=> alert("Nice try 😏"));
+
+  // -----------------------------
+  // CONFETTI (canvas) on YES
+  // -----------------------------
+  const canvas = document.getElementById('confetti');
+  const ctx = canvas.getContext('2d');
+  let W,H, confetti = [], confettiRunning = false;
+
+  function resizeCanvas(){
+    W = canvas.width = window.innerWidth * devicePixelRatio;
+    H = canvas.height = window.innerHeight * devicePixelRatio;
+    canvas.style.width = window.innerWidth + "px";
+    canvas.style.height = window.innerHeight + "px";
+    ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  }
+  window.addEventListener('resize', ()=>{ resizeCanvas(); initNoPosition(); });
+  resizeCanvas();
+
+  function burstConfetti(){
+    const colors = ["#ff4d6d","#ff8fa3","#ffd166","#f72585","#a855f7","#22c55e","#60a5fa"];
+    const count = 180;
+    confetti = [];
+    for(let i=0;i<count;i++){
+      confetti.push({
+        x: window.innerWidth/2,
+        y: window.innerHeight/2 + 40,
+        vx: (Math.random()*10 - 5),
+        vy: (Math.random()*-12 - 4),
+        g: 0.25 + Math.random()*0.25,
+        r: 2 + Math.random()*4,
+        w: 6 + Math.random()*8,
+        h: 6 + Math.random()*10,
+        rot: Math.random()*Math.PI,
+        vr: (Math.random()*0.2 - 0.1),
+        color: colors[Math.floor(Math.random()*colors.length)],
+        life: 120 + Math.random()*60
+      });
+    }
+    confettiRunning = true;
+    requestAnimationFrame(tickConfetti);
+  }
+
+  function tickConfetti(){
+    if(!confettiRunning) return;
+    ctx.clearRect(0,0,window.innerWidth, window.innerHeight);
+
+    confetti.forEach(p=>{
+      p.vy += p.g;
+      p.x  += p.vx;
+      p.y  += p.vy;
+      p.rot += p.vr;
+      p.life -= 1;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+      ctx.restore();
+    });
+
+    confetti = confetti.filter(p => p.life > 0 && p.y < window.innerHeight + 40);
+
+    if(confetti.length){
+      requestAnimationFrame(tickConfetti);
+    }else{
+      confettiRunning = false;
+      ctx.clearRect(0,0,window.innerWidth, window.innerHeight);
+    }
+  }
+
+  yesBtn.addEventListener('click', ()=>{
+    burstConfetti();
+    // tiny delay so she sees it
+    setTimeout(()=> window.location.href = "letter.html", 900);
+  });
+
+  window.addEventListener('load', initNoPosition);
+</script>
+
+</body>
+</html>
